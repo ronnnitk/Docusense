@@ -1,0 +1,5 @@
+[
+  {"question": "Which traversal of a binary search tree gives sorted order?", "expected_source": "ds_quiz.pdf", "expected_pages": [1]},
+  {"question": "What does breadth-first search use to visit vertices level by level?", "expected_source": "ds_notes.pdf", "expected_pages": [2]},
+  {"question": "What is the average time complexity of quick sort?", "expected_source": "ds_slides.pdf", "expected_pages": [1]}
+]
