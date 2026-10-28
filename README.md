@@ -47,3 +47,10 @@ Retrieval eval: `python scripts/run_eval.py` (edit `eval/eval_set.json` for your
 - Local 3B model is slow (tens of seconds per answer on CPU) and can still paraphrase loosely; always check the cited page.
 - Single user; no auth. No difficulty labels (no defensible source for them yet).
 - Measured so far: only on 3 synthetic questions (hit@4 3/3). Not a real benchmark.
+
+## Speed notes
+
+- Identical prompts (same question + same retrieved chunks + same model) are served from a persistent SQLite cache (`llm_cache` in `data/docusense.db`), so repeating a question or regenerating a study guide is instant. Changing a document changes the chunks, so it never serves a stale answer.
+- Ask and Study guide stream tokens as they are generated; Ollama keeps the model loaded for 30 minutes (`KEEP_ALIVE` in `llm.py`) to skip the reload delay.
+- Not used on purpose: Redis, leases/locks and custom tokenization. This is a single-user local app, SQLite already persists the cache, and the model's own tokenizer is handled by Ollama.
+- Set `DOCUSENSE_DB=path\to\other.db` to run against a separate database (handy for demos/testing).

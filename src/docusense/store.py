@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from contextlib import closing
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from .schemas import MCQ
 
-DEFAULT_DB = Path("data") / "docusense.db"
+DEFAULT_DB = Path(os.environ.get("DOCUSENSE_DB", Path("data") / "docusense.db"))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS questions (
@@ -22,6 +23,11 @@ CREATE TABLE IF NOT EXISTS questions (
     answer TEXT,
     explanation TEXT,
     issues TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS llm_cache (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    ts REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +88,23 @@ class Store:
             for r in rows
         ]
         return [q for q in mcqs if sources is None or q.source in sources]
+
+    # -- LLM answer cache ---------------------------------------------------
+    def cache_get(self, key: str) -> str | None:
+        with closing(self._conn()) as c:
+            row = c.execute("SELECT value FROM llm_cache WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def cache_put(self, key: str, value: str) -> None:
+        with closing(self._conn()) as c:
+            c.execute("INSERT OR REPLACE INTO llm_cache VALUES (?,?,?)", (key, value, time.time()))
+            c.commit()
+
+    def cache_clear(self) -> int:
+        with closing(self._conn()) as c:
+            n = c.execute("DELETE FROM llm_cache").rowcount
+            c.commit()
+        return n
 
     # -- attempts -----------------------------------------------------------
     def record_attempt(self, q: MCQ, selected: str, topic: str | None = None) -> None:
