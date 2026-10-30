@@ -54,3 +54,9 @@ Retrieval eval: `python scripts/run_eval.py` (edit `eval/eval_set.json` for your
 - Ask and Study guide stream tokens as they are generated; Ollama keeps the model loaded for 30 minutes (`KEEP_ALIVE` in `llm.py`) to skip the reload delay.
 - Not used on purpose: Redis, leases/locks and custom tokenization. This is a single-user local app, SQLite already persists the cache, and the model's own tokenizer is handled by Ollama.
 - Set `DOCUSENSE_DB=path\to\other.db` to run against a separate database (handy for demos/testing).
+
+## AI-generated practice questions
+
+Quiz page -> "Generate practice questions from my notes". For a topic, the app retrieves chunks and asks the local model for one MCQ per chunk. A question is kept only if (1) the JSON is well-formed with 4 distinct options, (2) the supporting quote it returns really occurs in that chunk, (3) the quote mentions the marked answer, and (4) no wrong option is also supported by the excerpt (checked with a yes/no model call per option). Kept questions are saved with their source page, labelled "AI-generated", and can be excluded from a quiz.
+
+Honest limits: this proves a question is anchored to your text, not that it is perfect. In testing on the sample notes, most first drafts were rejected (several had a second correct option), so expect to try a few chunks and ~20-40 s per question on CPU.

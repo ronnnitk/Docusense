@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS questions (
     options TEXT NOT NULL,
     answer TEXT,
     explanation TEXT,
-    issues TEXT NOT NULL DEFAULT '[]'
+    issues TEXT NOT NULL DEFAULT '[]',
+    generated INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS llm_cache (
     key TEXT PRIMARY KEY,
@@ -50,6 +51,9 @@ class Store:
         self._memory = sqlite3.connect(":memory:") if self.path == ":memory:" else None
         with closing(self._conn()) as c:
             c.executescript(_SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(questions)").fetchall()}
+            if "generated" not in cols:  # databases created before AI-generated questions
+                c.execute("ALTER TABLE questions ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
             c.commit()
 
     def _conn(self) -> sqlite3.Connection:
@@ -63,31 +67,50 @@ class Store:
     def replace_questions(self, source: str, mcqs: list[MCQ]) -> None:
         with closing(self._conn()) as c:
             c.execute("DELETE FROM questions WHERE source = ?", (source,))
-            c.executemany(
-                "INSERT OR REPLACE INTO questions VALUES (?,?,?,?,?,?,?,?,?)",
-                [
-                    (q.id, q.source, q.page, q.number, q.stem, json.dumps(q.options),
-                     q.answer, q.explanation, json.dumps(q.issues))
-                    for q in mcqs
-                ],
-            )
+            self._insert(c, mcqs)
             c.commit()
+
+    def add_questions(self, mcqs: list[MCQ]) -> None:
+        """Insert without touching existing rows (used for generated questions)."""
+        with closing(self._conn()) as c:
+            self._insert(c, mcqs)
+            c.commit()
+
+    @staticmethod
+    def _insert(c, mcqs: list[MCQ]) -> None:
+        c.executemany(
+            "INSERT OR REPLACE INTO questions "
+            "(id, source, page, number, stem, options, answer, explanation, issues, generated) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [
+                (q.id, q.source, q.page, q.number, q.stem, json.dumps(q.options),
+                 q.answer, q.explanation, json.dumps(q.issues), int(q.generated))
+                for q in mcqs
+            ],
+        )
 
     def delete_source(self, source: str) -> None:
         with closing(self._conn()) as c:
             c.execute("DELETE FROM questions WHERE source = ?", (source,))
             c.commit()
 
-    def load_questions(self, sources: list[str] | None = None) -> list[MCQ]:
+    def load_questions(
+        self, sources: list[str] | None = None, generated: bool | None = None
+    ) -> list[MCQ]:
+        """generated=None: all, False: only PDF questions, True: only AI-generated."""
         with closing(self._conn()) as c:
             rows = c.execute("SELECT * FROM questions ORDER BY source, number").fetchall()
         mcqs = [
             MCQ(r["id"], r["source"], r["page"], r["number"], r["stem"],
                 json.loads(r["options"]), r["answer"], r["explanation"],
-                json.loads(r["issues"]))
+                json.loads(r["issues"]), bool(r["generated"]))
             for r in rows
         ]
-        return [q for q in mcqs if sources is None or q.source in sources]
+        return [
+            q for q in mcqs
+            if (sources is None or q.source in sources)
+            and (generated is None or q.generated == generated)
+        ]
 
     # -- LLM answer cache ---------------------------------------------------
     def cache_get(self, key: str) -> str | None:

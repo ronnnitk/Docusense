@@ -1,6 +1,7 @@
 """Embeddings + Chroma storage. Incremental per-document indexing."""
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 
 import chromadb
@@ -17,7 +18,8 @@ def load_embedder():
     return SentenceTransformer(EMBED_MODEL)
 
 
-def open_collection(path: str = "./chroma_db"):
+def open_collection(path: str | None = None):
+    path = path or os.environ.get("DOCUSENSE_CHROMA", "./chroma_db")
     client = chromadb.PersistentClient(path=path)
     return client.get_or_create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 

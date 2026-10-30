@@ -34,14 +34,14 @@ if not docs:
     st.info("Nothing indexed yet. Upload PDFs and click 'Process PDFs'.")
 for d in docs:
     c1, c2 = st.columns([5, 1])
-    n_q = len(store.load_questions([d["source"]]))
+    n_q = len(store.load_questions([d["source"]], generated=False))
     c1.write(f"**{d['source']}** — {d['pages']} pages, {d['chunks']} chunks, {n_q} MCQs")
     if c2.button("Delete", key=f"del_{d['source']}"):
         retrieval.delete_document(collection, d["source"])
         store.delete_source(d["source"])
         st.rerun()
 
-bank = store.load_questions()
+bank = store.load_questions(generated=False)
 if bank:
     with st.expander(f"Question bank preview ({len(bank)} MCQs)"):
         flagged = [q for q in bank if q.issues]

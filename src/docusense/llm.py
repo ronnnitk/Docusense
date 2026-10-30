@@ -33,7 +33,9 @@ def build_context(hits: list[Hit]) -> str:
     )
 
 
-def _chat(system: str, user: str, num_predict: int) -> str:
+def _chat(
+    system: str, user: str, num_predict: int, *, json_mode: bool = False, temperature: float = 0.1
+) -> str:
     try:
         response = ollama.chat(
             model=MODEL,
@@ -41,7 +43,8 @@ def _chat(system: str, user: str, num_predict: int) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            options={"temperature": 0.1, "num_predict": num_predict},
+            format="json" if json_mode else None,
+            options={"temperature": temperature, "num_predict": num_predict},
             keep_alive=KEEP_ALIVE,
         )
     except ollama.ResponseError as exc:

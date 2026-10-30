@@ -39,3 +39,4 @@ class MCQ:
     answer: str | None = None       # only set when found in the PDF itself
     explanation: str | None = None  # only set when found in the PDF itself
     issues: list[str] = field(default_factory=list)  # extraction warnings
+    generated: bool = False  # written by the LLM, not found in a PDF
