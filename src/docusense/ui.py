@@ -10,7 +10,12 @@ ASSETS = Path(__file__).resolve().parents[2] / "assets"
 _LOGO = (ASSETS / "logo.svg").read_text(encoding="utf-8")
 
 _CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+/* narrow screens: keep the nav links in a wrapped row instead of one per line */
+@media (max-width: 640px) {
+  .block-container { padding: 1rem 1rem 2rem; }
+  .st-key-topnav [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .25rem .5rem; }
+  .st-key-topnav [data-testid="stColumn"] { min-width: 0 !important; flex: 0 0 auto !important; width: auto !important; }
+}
 
 /* One blurred background for every page */
 .stApp {
@@ -24,7 +29,7 @@ _CSS = """
 [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stSidebar"],
 [data-testid="stSidebarCollapsedControl"], [data-testid="stDecoration"], footer { display: none !important; }
 .block-container { max-width: 100%; padding: 1.4rem 4rem 3rem; }
-html, body, .stApp, button, input, textarea { font-family: 'Outfit', 'Segoe UI', sans-serif; }
+html, body, .stApp, button, input, textarea { font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; }
 
 /* buttons & widgets */
 .stButton > button, .stDownloadButton > button {

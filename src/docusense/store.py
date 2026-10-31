@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .schemas import MCQ
 
+CACHE_MAX_ENTRIES = 500
 DEFAULT_DB = Path(os.environ.get("DOCUSENSE_DB", Path("data") / "docusense.db"))
 
 _SCHEMA = """
@@ -24,6 +25,13 @@ CREATE TABLE IF NOT EXISTS questions (
     explanation TEXT,
     issues TEXT NOT NULL DEFAULT '[]',
     generated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS documents (
+    source TEXT PRIMARY KEY,
+    sha256 TEXT,
+    pages INTEGER NOT NULL,
+    chunks INTEGER NOT NULL,
+    indexed_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS llm_cache (
     key TEXT PRIMARY KEY,
@@ -50,6 +58,8 @@ class Store:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._memory = sqlite3.connect(":memory:") if self.path == ":memory:" else None
         with closing(self._conn()) as c:
+            if self._memory is None:
+                c.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer
             c.executescript(_SCHEMA)
             cols = {r[1] for r in c.execute("PRAGMA table_info(questions)").fetchall()}
             if "generated" not in cols:  # databases created before AI-generated questions
@@ -59,7 +69,7 @@ class Store:
     def _conn(self) -> sqlite3.Connection:
         if self._memory is not None:
             return _Keep(self._memory)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=10)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -112,6 +122,28 @@ class Store:
             and (generated is None or q.generated == generated)
         ]
 
+    # -- document registry ----------------------------------------------------
+    def register_document(self, source: str, sha256: str | None, pages: int, chunks: int) -> None:
+        with closing(self._conn()) as c:
+            c.execute("INSERT OR REPLACE INTO documents VALUES (?,?,?,?,?)",
+                      (source, sha256, pages, chunks, time.time()))
+            c.commit()
+
+    def unregister_document(self, source: str) -> None:
+        with closing(self._conn()) as c:
+            c.execute("DELETE FROM documents WHERE source = ?", (source,))
+            c.commit()
+
+    def get_document(self, source: str) -> dict | None:
+        with closing(self._conn()) as c:
+            row = c.execute("SELECT * FROM documents WHERE source = ?", (source,)).fetchone()
+        return dict(row) if row else None
+
+    def list_documents(self) -> list[dict]:
+        with closing(self._conn()) as c:
+            rows = c.execute("SELECT * FROM documents ORDER BY source").fetchall()
+        return [dict(r) for r in rows]
+
     # -- LLM answer cache ---------------------------------------------------
     def cache_get(self, key: str) -> str | None:
         with closing(self._conn()) as c:
@@ -121,6 +153,9 @@ class Store:
     def cache_put(self, key: str, value: str) -> None:
         with closing(self._conn()) as c:
             c.execute("INSERT OR REPLACE INTO llm_cache VALUES (?,?,?)", (key, value, time.time()))
+            c.execute(  # keep only the newest entries so the cache cannot grow forever
+                "DELETE FROM llm_cache WHERE key NOT IN "
+                "(SELECT key FROM llm_cache ORDER BY ts DESC LIMIT ?)", (CACHE_MAX_ENTRIES,))
             c.commit()
 
     def cache_clear(self) -> int:

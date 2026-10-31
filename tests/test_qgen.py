@@ -1,7 +1,7 @@
 import json
 
 from docusense import qgen
-from docusense.schemas import MCQ, Hit
+from docusense.schemas import Hit
 from docusense.store import Store
 
 CHUNK = ("A binary search tree keeps left < node < right, which makes search, "

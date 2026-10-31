@@ -5,7 +5,6 @@ from docusense.pdf_ingestion import PdfError, read_pdf
 
 ui.page_title("Syllabus coverage", "See which syllabus topics your documents actually cover.")
 
-embedder, collection = shared.get_embedder(), shared.get_collection()
 ss = st.session_state
 
 st.write("Paste a syllabus (or upload a PDF), extract topics, edit them, then check coverage.")
@@ -37,6 +36,7 @@ st.text_area(
 )
 
 if st.button("Check coverage", disabled=not shared.topics() or not shared.indexed_sources()):
+    embedder, collection = shared.embedder(), shared.get_collection()
     with st.spinner("Matching topics against your documents..."):
         ss.coverage = [
             syllabus.classify(t, retrieval.search(collection, embedder, t, k=6))

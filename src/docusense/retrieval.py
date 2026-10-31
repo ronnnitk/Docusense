@@ -24,18 +24,50 @@ def open_collection(path: str | None = None):
     return client.get_or_create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 
 
-def index_chunks(collection, embedder, source: str, chunks: list[Chunk]) -> None:
-    """Replace ONLY this file's chunks; other documents stay untouched."""
+EMBED_BATCH = 64
+ADD_BATCH = 2000  # Chroma rejects single calls above ~5461 records
+
+
+def embed_chunks(embedder, chunks: list[Chunk], progress=None) -> list[list[float]]:
+    """Embed in batches so callers can show progress (done, total)."""
+    vectors: list[list[float]] = []
+    for i in range(0, len(chunks), EMBED_BATCH):
+        batch = chunks[i:i + EMBED_BATCH]
+        vectors.extend(
+            embedder.encode(
+                [c.text for c in batch], normalize_embeddings=True,
+                batch_size=EMBED_BATCH, show_progress_bar=False,
+            ).tolist()
+        )
+        if progress:
+            progress(len(vectors), len(chunks))
+    return vectors
+
+
+def index_chunks(collection, embedder, source: str, chunks: list[Chunk], progress=None) -> None:
+    """Replace ONLY this file's chunks; other documents stay untouched.
+
+    The slow part (embedding) happens BEFORE anything is deleted, so an error or an
+    interrupted run leaves the previous version of the document intact.
+    """
+    vectors = embed_chunks(embedder, chunks, progress) if chunks else []
     collection.delete(where={"source": source})
-    if not chunks:
-        return
-    vectors = embedder.encode([c.text for c in chunks], normalize_embeddings=True).tolist()
-    collection.add(
-        ids=[c.id for c in chunks],
-        documents=[c.text for c in chunks],
-        embeddings=vectors,
-        metadatas=[{"source": c.source, "page": c.page} for c in chunks],
-    )
+    try:
+        for i in range(0, len(chunks), ADD_BATCH):
+            part = chunks[i:i + ADD_BATCH]
+            collection.add(
+                ids=[c.id for c in part],
+                documents=[c.text for c in part],
+                embeddings=vectors[i:i + ADD_BATCH],
+                metadatas=[{"source": c.source, "page": c.page} for c in part],
+            )
+    except Exception:
+        collection.delete(where={"source": source})  # never leave a half-indexed document
+        raise
+
+
+def has_document(collection, source: str) -> bool:
+    return bool(collection.get(where={"source": source}, limit=1, include=[])["ids"])
 
 
 def delete_document(collection, source: str) -> None:

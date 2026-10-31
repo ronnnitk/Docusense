@@ -28,7 +28,7 @@ if quiz is None and shared.indexed_sources():
         if st.button("Generate questions", disabled=not topic):
             try:
                 hits = retrieval.diverse_search(
-                    shared.get_collection(), shared.get_embedder(), topic, k=count, per_file=2
+                    shared.get_collection(), shared.embedder(), topic, k=count, per_file=2
                 )
                 made, notes = [], []
                 with st.status("Generating...", expanded=True) as status:
