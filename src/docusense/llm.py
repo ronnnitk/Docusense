@@ -5,9 +5,21 @@ import hashlib
 import os
 import re
 
-import ollama
+try:  # optional: not installed on the hosted (Streamlit Cloud) deployment
+    import ollama
+except ImportError:  # pragma: no cover
+    ollama = None
 
 from .schemas import Hit
+
+# Hosted mode: a free Groq API key (https://console.groq.com, no card needed) replaces
+# local Ollama. Without GROQ_API_KEY the app uses local Ollama exactly as before.
+GROQ_MODEL = os.environ.get("DOCUSENSE_GROQ_MODEL", "llama-3.1-8b-instant")
+
+
+def use_groq() -> bool:
+    return bool(os.environ.get("GROQ_API_KEY"))
+
 
 MODEL = os.environ.get("DOCUSENSE_LLM_MODEL", "qwen2.5:3b")
 # If even the best chunk is this far (cosine distance) the question is treated
@@ -43,6 +55,14 @@ def build_context(hits: list[Hit]) -> str:
 
 
 def _wrap_error(exc: Exception) -> LLMError:
+    if use_groq():
+        return LLMError(f"The Groq API request failed ({type(exc).__name__}: {exc}). "
+                        "The free tier is rate limited - wait a moment and retry.")
+    if ollama is None:
+        return LLMError(
+            "No language model is configured. Set GROQ_API_KEY (hosted, free) or install "
+            "Ollama and run `pip install ollama` (local)."
+        )
     if isinstance(exc, ollama.ResponseError):
         return LLMError(
             f"Ollama rejected the request ({exc}). Is the model installed? "
@@ -56,6 +76,8 @@ def _wrap_error(exc: Exception) -> LLMError:
 
 def warm_up() -> None:
     """Load the model into memory so the first real question isn't ~15 s slower. Never raises."""
+    if use_groq() or ollama is None:
+        return
     try:
         ollama.chat(
             model=MODEL,
@@ -70,6 +92,13 @@ def warm_up() -> None:
 def _chat(
     system: str, user: str, num_predict: int, *, json_mode: bool = False, temperature: float = 0.1
 ) -> str:
+    if use_groq():
+        text = "".join(
+            p for p in _groq_stream(system, user, num_predict, temperature) if isinstance(p, str)
+        )
+        if json_mode:  # prompts ask for JSON; strip a code fence if the model added one
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+        return text
     try:
         response = ollama.chat(
             model=MODEL,
@@ -96,8 +125,35 @@ def check_citations(answer: str, n_sources: int) -> list[int]:
     return sorted(n for n in cited if n < 1 or n > n_sources)
 
 
+def _groq_stream(system: str, user: str, num_predict: int, temperature: float = 0.1):
+    try:
+        from groq import Groq
+
+        stream = Groq().chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_tokens=num_predict * 2,  # hosted model is fast; allow more room than local CPU
+            temperature=temperature,
+            stream=True,
+        )
+        for chunk in stream:
+            choice = chunk.choices[0]
+            if choice.delta.content:
+                yield choice.delta.content
+            if choice.finish_reason == "length":
+                yield _TRUNCATED
+    except Exception as exc:
+        raise _wrap_error(exc) from exc
+
+
 def _ollama_stream(system: str, user: str, num_predict: int):
-    """Yield text pieces, then `_TRUNCATED` if the model stopped because of the token limit."""
+    """Backend stream: yield text pieces, then `_TRUNCATED` if the token limit was hit.
+
+    Uses Groq in hosted mode, otherwise local Ollama.
+    """
+    if use_groq():
+        yield from _groq_stream(system, user, num_predict)
+        return
     try:
         stream = ollama.chat(
             model=MODEL,
@@ -136,7 +192,7 @@ def _chat_stream(system: str, user: str, num_predict: int, fresh: bool = False):
     skips the cache read so the user can force a new generation.
     """
     key = hashlib.sha256(
-        "|".join((MODEL, str(num_predict), system, user)).encode()
+        "|".join((GROQ_MODEL if use_groq() else MODEL, str(num_predict), system, user)).encode()
     ).hexdigest()
     if _cache is not None and not fresh:
         cached = _cache.cache_get(key)

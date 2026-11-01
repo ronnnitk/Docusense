@@ -1,0 +1,4 @@
+# Local, fully offline setup (Ollama + PyTorch embeddings):  pip install -r requirements-local.txt
+-r requirements.txt
+sentence-transformers==6.2.0
+ollama==0.6.3

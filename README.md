@@ -60,3 +60,16 @@ Retrieval eval: `python scripts/run_eval.py` (edit `eval/eval_set.json` for your
 Quiz page -> "Generate practice questions from my notes". For a topic, the app retrieves chunks and asks the local model for one MCQ per chunk. A question is kept only if (1) the JSON is well-formed with 4 distinct options, (2) the supporting quote it returns really occurs in that chunk, (3) the quote mentions the marked answer, and (4) no wrong option is also supported by the excerpt (checked with a yes/no model call per option). Kept questions are saved with their source page, labelled "AI-generated", and can be excluded from a quiz.
 
 Honest limits: this proves a question is anchored to your text, not that it is perfect. In testing on the sample notes, most first drafts were rejected (several had a second correct option), so expect to try a few chunks and ~20-40 s per question on CPU.
+
+## Deploy free on Streamlit Community Cloud
+
+Vercel cannot host Streamlit. Streamlit Cloud can, using only free services:
+
+1. Push the repo to GitHub.
+2. Get a free key at https://console.groq.com (no card needed).
+3. On https://share.streamlit.io choose "New app", pick the repo, main file `app.py`.
+4. In Advanced settings -> Secrets add: `GROQ_API_KEY = "gsk_..."`
+
+The hosted app uses `requirements.txt` (no PyTorch; ONNX embeddings, Groq LLM). Uploaded PDFs and
+the index live on the app's temporary disk and are lost when the app restarts or sleeps.
+For the fully offline version run `pip install -r requirements-local.txt` and use Ollama.

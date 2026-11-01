@@ -12,9 +12,26 @@ COLLECTION = "docusense_documents"
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def load_embedder():
-    from sentence_transformers import SentenceTransformer
+class _OnnxEmbedder:
+    """Same all-MiniLM-L6-v2 model via ONNX (bundled with chromadb): no PyTorch, ~100 MB
+    instead of ~2 GB, which is what fits on free hosting. Mimics SentenceTransformer.encode."""
 
+    def __init__(self) -> None:
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
+        self._fn = ONNXMiniLM_L6_V2()
+
+    def encode(self, texts, normalize_embeddings=True, **_ignored):
+        import numpy as np
+
+        return np.asarray(self._fn(list(texts)), dtype="float32")  # already L2-normalized
+
+
+def load_embedder():
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:  # hosted deployment: lightweight ONNX build of the same model
+        return _OnnxEmbedder()
     return SentenceTransformer(EMBED_MODEL)
 
 
