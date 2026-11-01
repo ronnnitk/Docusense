@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from chromadb.app import app
 import streamlit as st  # noqa: E402
 
 from docusense import shared, ui  # noqa: E402
@@ -29,3 +30,6 @@ pages = [
 current = st.navigation(pages, position="hidden")
 ui.header(pages)
 current.run()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0",debug=True, port=8080)
