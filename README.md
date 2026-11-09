@@ -73,3 +73,9 @@ Vercel cannot host Streamlit. Streamlit Cloud can, using only free services:
 The hosted app uses `requirements.txt` (no PyTorch; ONNX embeddings, Groq LLM). Uploaded PDFs and
 the index live on the app's temporary disk and are lost when the app restarts or sleeps.
 For the fully offline version run `pip install -r requirements-local.txt` and use Ollama.
+
+**Per-visitor data (hosted mode).** When `GROQ_API_KEY` is set, each visitor gets a private
+workspace (documents, index, quiz history) identified by a random `?u=` token in the URL, so a
+refresh keeps the data and other visitors cannot see it. Anyone with your link can open your
+workspace, so treat it like an unlisted link. Workspaces idle for 3 days are deleted on the next
+server start. Locally nothing changes (single user); force with `DOCUSENSE_MULTIUSER=0/1`.

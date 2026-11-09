@@ -192,6 +192,15 @@ class Store:
         ]
         return sorted(out, key=lambda d: d["accuracy"])
 
+    def latest_results(self) -> dict[str, int]:
+        """question id -> 1/0 for its most recent scorable attempt."""
+        with closing(self._conn()) as c:
+            rows = c.execute(
+                "SELECT question_id, is_correct FROM attempts WHERE id IN "
+                "(SELECT MAX(id) FROM attempts WHERE is_correct IS NOT NULL GROUP BY question_id)"
+            ).fetchall()
+        return {r["question_id"]: r["is_correct"] for r in rows}
+
     def overall(self) -> dict:
         with closing(self._conn()) as c:
             r = c.execute(

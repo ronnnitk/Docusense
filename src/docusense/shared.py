@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import threading
+import time
+import uuid
 from pathlib import Path
 
 import streamlit as st
 
 from . import ingest, llm, retrieval
-from .store import Store
+from .store import DEFAULT_DB, Store
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
@@ -50,16 +54,80 @@ def start_warmup() -> None:
         threading.Thread(target=safe, args=(fn,), name=f"docusense-warm-{fn.__name__}", daemon=True).start()
 
 
-@st.cache_resource
-def get_collection():
-    return retrieval.open_collection()
+USERS_DIR = Path(os.environ.get("DOCUSENSE_USERS_DIR", "data/users"))
+USER_TTL_DAYS = 3
+_UID_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+def multiuser() -> bool:
+    """Hosted (public) mode: every visitor gets private data. Local use stays single-user.
+
+    On by default when a hosted LLM key is configured; override with DOCUSENSE_MULTIUSER=0/1.
+    """
+    flag = os.environ.get("DOCUSENSE_MULTIUSER")
+    return flag == "1" if flag is not None else llm.use_groq()
+
+
+def user_id() -> str | None:
+    """A random private id per visitor, kept in the URL (?u=...) so a page refresh keeps the data.
+
+    Anyone holding the link can open that workspace, so treat it like an unlisted link.
+    """
+    if not multiuser():
+        return None
+    ss = st.session_state
+    if "uid" not in ss:
+        uid = st.query_params.get("u", "")
+        ss.uid = uid if _UID_RE.match(uid) else uuid.uuid4().hex[:16]
+    if st.query_params.get("u") != ss.uid:
+        st.query_params["u"] = ss.uid
+    return ss.uid
 
 
 @st.cache_resource
-def get_store() -> Store:
-    store = Store()
-    ingest.sync_registry(get_collection(), store)  # once per server start
+def _prune_old_users() -> int:
+    """Delete workspaces untouched for USER_TTL_DAYS. Runs once per server start."""
+    removed = 0
+    cutoff = time.time() - USER_TTL_DAYS * 86400
+    if USERS_DIR.is_dir():
+        for d in USERS_DIR.iterdir():
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+    return removed
+
+
+def _paths(uid: str | None) -> tuple[Path, Path]:
+    if uid is None:
+        return DEFAULT_DB, Path(os.environ.get("DOCUSENSE_CHROMA", "./chroma_db"))
+    root = USERS_DIR / uid
+    return root / "docusense.db", root / "chroma"
+
+
+@st.cache_resource
+def _collection_for(uid: str | None):
+    return retrieval.open_collection(str(_paths(uid)[1]))
+
+
+@st.cache_resource
+def _store_for(uid: str | None) -> Store:
+    store = Store(_paths(uid)[0])
+    ingest.sync_registry(_collection_for(uid), store)  # once per workspace per server start
     return store
+
+
+def get_collection():
+    return _collection_for(user_id())
+
+
+def get_store() -> Store:
+    uid = user_id()
+    if uid:
+        _prune_old_users()
+    s = _store_for(uid)
+    if uid:
+        os.utime(USERS_DIR / uid)  # mark the workspace active so it is not pruned
+    return s
 
 
 @st.cache_data

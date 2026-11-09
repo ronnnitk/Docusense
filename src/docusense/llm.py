@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 
 try:  # optional: not installed on the hosted (Streamlit Cloud) deployment
     import ollama
@@ -175,12 +176,12 @@ def _ollama_stream(system: str, user: str, num_predict: int):
         raise _wrap_error(exc) from exc
 
 
-_cache = None  # a Store with cache_get/cache_put, set by the app
+_local = threading.local()  # each Streamlit session runs in its own thread: one cache per visitor
 
 
 def set_cache(store) -> None:
-    global _cache
-    _cache = store
+    """A Store with cache_get/cache_put (or None), set by the app for the current thread."""
+    _local.cache = store
 
 
 def _chat_stream(system: str, user: str, num_predict: int, fresh: bool = False):
@@ -194,6 +195,7 @@ def _chat_stream(system: str, user: str, num_predict: int, fresh: bool = False):
     key = hashlib.sha256(
         "|".join((GROQ_MODEL if use_groq() else MODEL, str(num_predict), system, user)).encode()
     ).hexdigest()
+    _cache = getattr(_local, "cache", None)
     if _cache is not None and not fresh:
         cached = _cache.cache_get(key)
         if cached is not None:

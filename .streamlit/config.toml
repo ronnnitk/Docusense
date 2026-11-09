@@ -5,5 +5,8 @@ backgroundColor = "#0E0A1F"
 secondaryBackgroundColor = "#1A1433"
 textColor = "#F4F1FA"
 
+[server]
+maxUploadSize = 25
+
 [browser]
 gatherUsageStats = false
